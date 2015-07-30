@@ -27,6 +27,10 @@ import (
 	"time"
 )
 
+// TBucket is a struct representing the token bucket algorithm.
+//
+// For more information on the token bucket algorithm, look at:
+// https://en.wikipedia.org/wiki/Token_bucket
 type TBucket struct {
 	// available tokens
 	tokens int64
@@ -36,8 +40,13 @@ type TBucket struct {
 	ticker *time.Ticker
 }
 
-// return a new token bucket with the specified maximum bucket size (burst) and
-// the time interval for a token to be added to the bucket
+// NewTBucket will create a new token bucket queue instance.
+//
+// The parameter "burst" is the maximum bucket size and the parameter "dur" is
+// the time interval another token will be added to the bucket.
+//
+// To learn more about the token bucket algorithm, look at:
+// https://en.wikipedia.org/wiki/Token_bucket
 func NewTBucket(burst int64, dur time.Duration) *TBucket {
 	if burst <= 1 {
 		burst = 1
@@ -51,7 +60,7 @@ func NewTBucket(burst int64, dur time.Duration) *TBucket {
 	return tb
 }
 
-// initialize the token bucket
+// Function that should run in it's own goroutine and adds tokens as necessary
 func (tb *TBucket) tick() {
 	// receive from ticker
 	for {
@@ -68,7 +77,8 @@ func (tb *TBucket) tick() {
 	}
 }
 
-// return true if token obtained; false otherwise
+// GetTok returns true if a token has been successfully retrieved, and returns
+// false if no token is available.
 func (tb *TBucket) GetTok() bool {
 	var done bool
 	var val int64
