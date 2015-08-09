@@ -23,6 +23,7 @@
 package ratelim
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -67,17 +68,17 @@ func TestTBucketPause(t *testing.T) {
 		t.Error("Resume TBucket failed")
 	}
 	time.Sleep(time.Millisecond * 10)
-	if tb.tokens == 0 {
+	if atomic.LoadInt64(&tb.tokens) == 0 {
 		t.Error("Tokens not added to bucket after Resume")
 	}
 	tb.Pause()
-	toks := tb.tokens
+	toks := atomic.LoadInt64(&tb.tokens)
 	time.Sleep(time.Millisecond * 5)
 	if !tb.Close() {
 		t.Error("Close in paused TBucket returned false")
 	}
 	time.Sleep(time.Millisecond * 5)
-	if tb.tokens != toks {
+	if atomic.LoadInt64(&tb.tokens) != toks {
 		t.Error("Tokens added after TBucket closed when paused")
 	}
 }
@@ -95,7 +96,7 @@ func TestTBucketClose(t *testing.T) {
 	}
 	tb.Empty()
 	time.Sleep(time.Millisecond * 10)
-	if tb.tokens > 0 {
+	if atomic.LoadInt64(&tb.tokens) > 0 {
 		t.Error("Tokens added to closed TBucket")
 	}
 	if tb.Close() {
@@ -109,15 +110,15 @@ func TestTBucketFill(t *testing.T) {
 		t.Error("Pause returned false on non-paused TBucket")
 	}
 	tb.Empty()
-	if tb.tokens != 0 {
+	if atomic.LoadInt64(&tb.tokens) != 0 {
 		t.Error("Tokens remain in bucket after calling Empty")
 	}
 	tb.Fill()
-	if tb.tokens != 10 {
+	if atomic.LoadInt64(&tb.tokens) != 10 {
 		t.Error("Bucket not full after calling Fill:", tb.tokens)
 	}
 	tb.FillTo(5)
-	if tb.tokens != 5 {
+	if atomic.LoadInt64(&tb.tokens) != 5 {
 		t.Error("Incorrect number of tokens in bucket after calling FillTo")
 	}
 }
@@ -142,7 +143,7 @@ func TestTBucketGetToks(t *testing.T) {
 	if !tb.GetToks(-10) {
 		t.Error("GetToks returned false when enough tokens exist in bucket")
 	}
-	if tb.tokens != 9 {
+	if atomic.LoadInt64(&tb.tokens) != 9 {
 		t.Error("Incorrect number of tokens removed from bucket")
 	}
 	var oks int
