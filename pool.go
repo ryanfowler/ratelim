@@ -24,64 +24,73 @@ package ratelim
 
 import (
 	"sync/atomic"
-	"time"
 )
 
 type Pool struct {
-	created int64
-	max     int
-	ch      chan interface{}
-	new     func() interface{}
+	max   int64
+	psize int64
+	new   func() interface{}
+	list  *List
 }
 
-func NewPool(max int, new func() interface{}) *Pool {
+func NewPool(max int64, new func() interface{}) *Pool {
+	if max < 1 {
+		max = 1
+	}
 	return &Pool{
-		max: max,
-		ch:  make(chan interface{}, max),
-		new: new,
+		max:  max,
+		new:  new,
+		list: NewList(),
+	}
+}
+
+func (p *Pool) Empty() {
+	for {
+		var done bool
+		for !done {
+			if c := atomic.LoadInt64(&p.psize); c > 0 {
+				done = atomic.CompareAndSwapInt64(&p.psize, c, c-1)
+			} else {
+				// pool is now empty
+				return
+			}
+		}
+		p.list.LPop()
 	}
 }
 
 func (p *Pool) Get() interface{} {
-	var item interface{}
-	select {
-	case item = <-p.ch:
-	default:
-		var done bool
-		for !done {
-			c := atomic.LoadInt64(&p.created)
-			if c < int64(p.max) {
-				done = atomic.CompareAndSwapInt64(&p.created, c, c+1)
-			} else {
-				return item
-			}
+	// attempt to retrieve existing item from pool
+	var done bool
+	for !done {
+		if c := atomic.LoadInt64(&p.psize); c > 0 {
+			done = atomic.CompareAndSwapInt64(&p.psize, c, c-1)
+		} else {
+			// no items in pool, create a new item
+			return p.new()
 		}
-		item = p.new()
 	}
-	return item
-}
-
-// doesn't work
-func (p *Pool) GetAndWait(dur time.Duration) interface{} {
-	var item interface{}
-	select {
-	case item = <-p.ch:
-	default:
-		var done bool
-		for !done {
-			c := atomic.LoadInt64(&p.created)
-			if c < int64(p.max) {
-				done = atomic.CompareAndSwapInt64(&p.created, c, c+1)
-			} else {
-				<-time.NewTimer(dur).C
-				return item
-			}
-		}
-		item = p.new
-	}
-	return item
+	// return item from pool
+	return p.list.LPop()
 }
 
 func (p *Pool) Put(item interface{}) {
-	p.ch <- item
+	// attempt to return item to the pool
+	var done bool
+	for !done {
+		if c := atomic.LoadInt64(&p.psize); c < p.max {
+			done = atomic.CompareAndSwapInt64(&p.psize, c, c+1)
+		} else {
+			// pool is full, discard item
+			return
+		}
+	}
+	// add item to pool
+	p.list.RPush(item)
+}
+
+func (p *Pool) Use(f func(interface{})) {
+	v := p.Get()
+	f(v)
+	p.Put(v)
 }
