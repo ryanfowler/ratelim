@@ -32,14 +32,14 @@ import (
 // All provided functions are safe for concurrent use. It is designed to be a
 // fast, lightweight, and lock-free implementation of the token bucket algorithm.
 //
-// For more information on the token bucket algorithm, check out:
+// For more information on the token bucket algorithm, visit:
 // https://en.wikipedia.org/wiki/Token_bucket
 type TBucket struct {
-	// available tokens
+	// number of tokens in the bucket (i.e. available tokens)
 	tokens int64
 	// bsize is the maximum number of tokens that can fit in the bucket
 	bsize int64
-	// burst is the number of tokens to add to the bucket for each 'tick'
+	// burst is the number of tokens to add to the bucket each 'tick'
 	burst int64
 	// ticker is the timer that adds tokens to the bucket
 	ticker *time.Ticker
@@ -59,7 +59,7 @@ type TBucket struct {
 // the time interval another token will be added to the bucket. Using this
 // function is equivilant to calling NewBurstyTBucket(bsize, 1, dur).
 //
-// To learn more about the token bucket algorithm, check out:
+// To learn more about the token bucket algorithm, visit:
 // https://en.wikipedia.org/wiki/Token_bucket
 func NewTBucket(bsize int64, dur time.Duration) *TBucket {
 	return NewBurstyTBucket(bsize, 1, dur)
@@ -111,13 +111,18 @@ func (tb *TBucket) tick() {
 				// resume event received
 			}
 		case <-tb.ticker.C:
-			// timer event, attempt to add token to the bucket
+			// timer event, attempt to add token(s) to the bucket
 			var done bool
 			for !done {
-				toks := atomic.LoadInt64(&tb.tokens)
-				if toks < tb.bsize {
-					done = atomic.CompareAndSwapInt64(&tb.tokens, toks, toks+tb.burst)
+				// add token(s) to the bucket if not already full
+				if toks := atomic.LoadInt64(&tb.tokens); toks < tb.bsize {
+					if toks+tb.burst >= tb.bsize {
+						done = atomic.CompareAndSwapInt64(&tb.tokens, toks, tb.bsize)
+					} else {
+						done = atomic.CompareAndSwapInt64(&tb.tokens, toks, toks+tb.burst)
+					}
 				} else {
+					// bucket is full, throw token(s) away
 					done = true
 				}
 			}
@@ -163,10 +168,13 @@ func (tb *TBucket) FillTo(n int64) {
 // It returns true if a token has been successfully retrieved, or returns
 // false if no token is available (the bucket is empty).
 func (tb *TBucket) GetTok() bool {
+	// probably should just use:
+	//     return tb.GetToks(1)
+	// but this function will likely be more common and saves the overhead
+	// of calling another function.
 	var done bool
 	for !done {
-		toks := atomic.LoadInt64(&tb.tokens)
-		if toks > 0 {
+		if toks := atomic.LoadInt64(&tb.tokens); toks > 0 {
 			done = atomic.CompareAndSwapInt64(&tb.tokens, toks, toks-1)
 		} else {
 			return false
@@ -183,13 +191,13 @@ func (tb *TBucket) GetTok() bool {
 // The provided parameter "n" cannot be smaller than 1. If a smaller value is
 // provided, the value 1 will be used.
 func (tb *TBucket) GetToks(n int64) bool {
+	// if the provided value is less than 1, return false
 	if n < 1 {
-		n = 1
+		return false
 	}
 	var done bool
 	for !done {
-		toks := atomic.LoadInt64(&tb.tokens)
-		if toks >= n {
+		if toks := atomic.LoadInt64(&tb.tokens); toks >= n {
 			done = atomic.CompareAndSwapInt64(&tb.tokens, toks, toks-n)
 		} else {
 			return false
@@ -235,7 +243,7 @@ func (tb *TBucket) Pause() bool {
 	return true
 }
 
-// Resume resumes a TBucket in a paused state and starts adding new tokens to
+// Resume resumes a TBucket in a paused state and begins adding new tokens to
 // the bucket again.
 //
 // Resume returns true if the TBucket has been resumed, or false if the TBucket

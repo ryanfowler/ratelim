@@ -140,8 +140,11 @@ func TestTBucketGetTok(t *testing.T) {
 func TestTBucketGetToks(t *testing.T) {
 	tb := NewTBucket(10, time.Second)
 	tb.Pause()
-	if !tb.GetToks(-10) {
-		t.Error("GetToks returned false when enough tokens exist in bucket")
+	if tb.GetToks(-10) {
+		t.Error("GetToks should return false with invalid input")
+	}
+	if !tb.GetToks(1) {
+		t.Error("GetToks returns false when enough tokens exist")
 	}
 	if atomic.LoadInt64(&tb.tokens) != 9 {
 		t.Error("Incorrect number of tokens removed from bucket")
