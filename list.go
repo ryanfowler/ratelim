@@ -14,7 +14,7 @@ type lnode struct {
 	value interface{}
 }
 
-// List represents a doubly linked list.
+// List represents a light-weight implementation of a doubly linked list.
 //
 // To learn more about doubly linked lists, visit:
 // https://en.wikipedia.org/wiki/Doubly_linked_list
@@ -29,11 +29,21 @@ type List struct {
 	length int
 }
 
-// NewList returns an initialized List instance.
+// NewList returns an initialized List pointer.
 func NewList() *List {
 	return &List{
 		mu: sync.Mutex{},
 	}
+}
+
+// Empty removes all items from the List. After calling this function, the
+// length of the list is 0.
+func (l *List) Empty() {
+	l.mu.Lock()
+	l.head = nil
+	l.tail = nil
+	l.length = 0
+	l.mu.Unlock()
 }
 
 // LEach iterates over each item in the List, starting from the left-most node
