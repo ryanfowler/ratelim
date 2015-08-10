@@ -28,38 +28,58 @@ import (
 )
 
 type Limiter struct {
-	cache map[string]int64
-	max   int64
-	mu    sync.Mutex
+	cache  map[string]int64
+	mu     sync.Mutex
+	max    int64
+	ticker *time.Ticker
+	cch    chan struct{}
+	closed bool
 }
 
 func NewLimiter(max int64, dur time.Duration) *Limiter {
 	lim := &Limiter{
-		cache: make(map[string]int64),
-		mu:    sync.Mutex{},
-		max:   max,
+		cache:  make(map[string]int64),
+		mu:     sync.Mutex{},
+		max:    max,
+		ticker: time.NewTicker(dur),
+		cch:    make(chan struct{}, 1),
 	}
-	go lim.tick(dur)
+	go lim.tick()
 	return lim
 }
 
-func (lim *Limiter) tick(dur time.Duration) {
-	ticker := time.NewTicker(dur)
+func (lim *Limiter) tick() {
 	for {
-		<-ticker.C
-		lim.ClearAll()
+		select {
+		case <-lim.ticker.C:
+			lim.ClearAll()
+		case <-lim.cch:
+			lim.ticker.Stop()
+			lim.ClearAll()
+			return
+		}
 	}
 }
 
-func (lim *Limiter) Inc(key string) bool {
+func (lim *Limiter) Close() {
 	lim.mu.Lock()
-	if lim.cache[key] == lim.max {
+	if lim.closed {
 		lim.mu.Unlock()
-		return false
+		return
 	}
-	lim.cache[key] += 1
+	lim.closed = true
 	lim.mu.Unlock()
-	return true
+	lim.cch <- struct{}{}
+}
+
+func (lim *Limiter) IsClosed() bool {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
+	return lim.closed
+}
+
+func (lim *Limiter) Inc(key string) bool {
+	return lim.IncBy(key, 1)
 }
 
 func (lim *Limiter) IncBy(key string, val int64) bool {
@@ -74,25 +94,11 @@ func (lim *Limiter) IncBy(key string, val int64) bool {
 }
 
 func (lim *Limiter) Dec(key string) bool {
-	lim.mu.Lock()
-	if lim.cache[key] == 0 {
-		lim.mu.Unlock()
-		return false
-	}
-	lim.cache[key] -= 1
-	lim.mu.Unlock()
-	return true
+	return lim.IncBy(key, -1)
 }
 
 func (lim *Limiter) DecBy(key string, val int64) bool {
-	lim.mu.Lock()
-	if lim.cache[key]-val < 0 {
-		lim.mu.Unlock()
-		return false
-	}
-	lim.cache[key] -= val
-	lim.mu.Unlock()
-	return true
+	return lim.IncBy(key, -val)
 }
 
 func (lim *Limiter) Clear(key string) {
