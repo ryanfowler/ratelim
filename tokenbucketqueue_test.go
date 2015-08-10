@@ -57,7 +57,7 @@ func TestTBucketQGetTok(t *testing.T) {
 	if negs != 5 {
 		t.Error("Incorrect amount of tokens granted")
 	}
-	if tb.toks != 0 {
+	if atomic.LoadInt64(&tb.tokens) != 0 {
 		t.Error("All tokens should be consumed")
 	}
 	if tb.qcnt != 5 {
@@ -78,11 +78,11 @@ func TestTBucketQGetTok2(t *testing.T) {
 		<-ch
 	}
 	dur := time.Now().Sub(t1)
-	if dur < time.Millisecond*500 || dur > time.Millisecond*550 {
-		t.Error("Incorrect timing of tokens")
+	if dur < time.Millisecond*480 || dur > time.Millisecond*550 {
+		t.Error("Incorrect timing of tokens:", dur)
 	}
 	time.Sleep(time.Millisecond * 1200)
-	if atomic.LoadInt64(&tb.toks) != 10 {
+	if atomic.LoadInt64(&tb.tokens) != 10 {
 		t.Error("Token bucket shoudl be full at this point")
 	}
 }
